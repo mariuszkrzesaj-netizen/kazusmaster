@@ -78,11 +78,11 @@ class KazusEvaluator:
         if not self.client:
             raise ValueError("Brak sekcji [gcp_service_account] ani GEMINI_API_KEY w Streamlit Secrets.")
 
-        # Aktualne modele dostępne w Vertex AI (endpoint global)
+        # Modele aktywne w projekcie new-its-system (endpoint global)
         self.models_fallback = [
+            "gemini-4-neon",
+            "gemini-4-carbon",
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
         ]
 
     def _call_with_fallback(self, prompt: str) -> str:
