@@ -47,6 +47,8 @@ class KazusEvaluator:
         try:
             if "gcp_service_account" in st.secrets:
                 creds_info = dict(st.secrets["gcp_service_account"])
+                if "private_key" in creds_info and isinstance(creds_info["private_key"], str):
+                    creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
                 credentials = service_account.Credentials.from_service_account_info(
                     creds_info,
                     scopes=["https://www.googleapis.com/auth/cloud-platform"],
@@ -54,7 +56,7 @@ class KazusEvaluator:
                 self.client = genai.Client(
                     vertexai=True,
                     project=creds_info.get("project_id", "new-its-system"),
-                    location="us-central1",
+                    location="global",
                     credentials=credentials,
                 )
         except Exception as e:
@@ -76,10 +78,11 @@ class KazusEvaluator:
         if not self.client:
             raise ValueError("Brak sekcji [gcp_service_account] ani GEMINI_API_KEY w Streamlit Secrets.")
 
-        # Oficjalne modele dostępne w Vertex AI (us-central1)
+        # Aktualne modele dostępne w Vertex AI (endpoint global)
         self.models_fallback = [
             "gemini-2.5-flash",
-            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-pro",
         ]
 
     def _call_with_fallback(self, prompt: str) -> str:
