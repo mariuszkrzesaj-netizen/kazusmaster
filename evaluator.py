@@ -43,7 +43,7 @@ class KazusEvaluator:
             raise ValueError("Brak klucza GEMINI_API_KEY w Streamlit Secrets.")
 
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-2.5-flash"
+        self.model = "gemini-3.8-flash"
 
     def generuj_kazus(self, dziedzina: str = "Prawo cywilne", temat: str = "", poziom: str = "Studia prawnicze") -> KazusEgzaminacyjny:
         kontekst_5_baz = zbierz_kontekst_prawny(
@@ -54,7 +54,7 @@ class KazusEvaluator:
         )
 
         prompt = f"""
-Jesteś profesorem prawa tworzącym egzaminacyjny kazus prawniczy dla studentów wydziałów prawa (projekt: Ratio Legis – patronat merytoryczny BSKK).
+Jesteś profesorem prawa tworzącym egzaminacyjny kazus prawniczy dla studentów wszystkich lat wydziałów prawa (projekt: Ratio Legis – patronat merytoryczny BSKK).
 Dziedzina: {dziedzina}
 Temat / zagadnienie: {temat or 'dowolne kluczowe zagadnienie egzaminacyjne'}
 Poziom: {poziom}
@@ -70,7 +70,7 @@ Wygeneruj realistyczny, wielowątkowy kazus egzaminacyjny wraz ze wzorcowym rozw
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=KazusEgzaminacyjny,
-                temperature=0.4,
+                temperature=1.0,
             ),
         )
         return KazusEgzaminacyjny.model_validate_json(response.text)
@@ -127,7 +127,7 @@ INSTRUKCJA OCENY:
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=OcenaKroku,
-                temperature=0.2,
+                temperature=1.0,
             ),
         )
         return OcenaKroku.model_validate_json(response.text)
