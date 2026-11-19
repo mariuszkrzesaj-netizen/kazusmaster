@@ -1,6 +1,5 @@
 streamlit
 google-genai
-requests
-beautifulsoup4
-python-docx
+google-auth
 pydantic
+requests
