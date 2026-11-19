@@ -44,51 +44,37 @@ class KazusEvaluator:
             raise ValueError("Brak klucza GEMINI_API_KEY w Streamlit Secrets.")
 
         self.client = genai.Client(api_key=api_key)
-        # Lista modeli w kolejności priorytetu – przy 503 automatycznie przełącza na kolejny
         self.models_fallback = ["gemini-3.8-flash", "gemini-4-hydrogen"]
 
     def _call_with_fallback(self, prompt: str, schema) -> str:
         ostatni_blad = None
         for model_name in self.models_fallback:
-            for proba in range(2):
-                try:
-                    response = self.client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=schema,
-                            temperature=1.0,
-                        ),
-                    )
-                    return response.text
-                except Exception as e:
-                    ostatni_blad = e
-                    err_str = str(e)
-                    if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str:
-                        time.sleep(1.2)
-                        continue
-                    break
-        raise RuntimeError(f"Wszystkie modele AI są chwilowo przeciążone. Szczegóły: {ostatni_blad}")
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=schema,
+                        temperature=1.0,
+                        thinking_config=types.ThinkingConfig(thinking_level="LOW"),
+                    ),
+                )
+                return response.text
+            except Exception as e:
+                ostatni_blad = e
+                time.sleep(0.5)
+                continue
+        raise RuntimeError(f"Chwilowy błąd połączenia z AI: {ostatni_blad}")
 
     def generuj_kazus(self, dziedzina: str = "Prawo cywilne", temat: str = "", poziom: str = "Studia prawnicze") -> KazusEgzaminacyjny:
-        kontekst_5_baz = zbierz_kontekst_prawny(
-            dziedzina=dziedzina,
-            akt=dziedzina,
-            artykul="",
-            temat_kazusu=temat or dziedzina,
-        )
-
         prompt = f"""
-Jesteś profesorem prawa tworzącym egzaminacyjny kazus prawniczy dla studentów wszystkich lat wydziałów prawa (projekt: Ratio Legis – patronat merytoryczny BSKK).
+Jesteś profesorem prawa tworzącym kazus prawniczy dla studentów wszystkich lat wydziałów prawa (projekt: Ratio Legis – patronat merytoryczny BSKK).
 Dziedzina: {dziedzina}
 Temat / zagadnienie: {temat or 'dowolne kluczowe zagadnienie egzaminacyjne'}
 Poziom: {poziom}
 
-Wykorzystaj poniższy zweryfikowany kontekst prawny z oficjalnych baz (ELI/Sejm, RCL, SAOS/SN, CBOSA/NSA, EUR-Lex):
-{kontekst_5_baz}
-
-Wygeneruj realistyczny, wielowątkowy kazus egzaminacyjny wraz ze wzorcowym rozwiązaniem w 5 krokach metody IRAC.
+Wygeneruj realistyczny, konkretny kazus prawniczy (stan faktyczny, pytanie prawne, główny akt prawny i artykuł) wraz ze wzorcowym rozwiązaniem w 5 krokach metody IRAC.
 """
         raw_json = self._call_with_fallback(prompt, KazusEgzaminacyjny)
         return KazusEgzaminacyjny.model_validate_json(raw_json)
@@ -121,7 +107,7 @@ Wygeneruj realistyczny, wielowątkowy kazus egzaminacyjny wraz ze wzorcowym rozw
         )
 
         prompt = f"""
-Jesteś surowym, ale sprawiedliwym egzaminatorem akademickim na wydziale prawa (projekt: Ratio Legis – patronat merytoryczny BSKK).
+Jesteś egzaminatorem akademickim na wydziale prawa (projekt: Ratio Legis – patronat merytoryczny BSKK).
 Oceniasz etap rozwiązania kazusu: **{etap}**.
 
 STAN FAKTYCZNY KAZUSU:
@@ -137,7 +123,7 @@ ODPOWIEDŹ STUDENTA NA ETAP ({etap}):
 INSTRUKCJA OCENY:
 1. Zweryfikuj poprawność merytoryczną w oparciu o przepisy (ELI/Sejm), uzasadnienia ustaw (RCL) oraz linię orzeczniczą SN (SAOS), NSA/WSA (CBOSA) i TSUE (EUR-Lex) widoczną powyżej.
 2. Jeśli w kontekście znajdują się sygnatury wyroków SN, NSA lub aktów UE pasujące do kazusu, przywołaj je w komentarzu lub wskazówce.
-3. Przyznaj uczciwą punktację (0–100 pkt) i podaj wzorcowe ujęcie tego etapu.
+3. Przyznaj punktację (0–100 pkt) i podaj wzorcowe ujęcie tego etapu.
 """
         raw_json = self._call_with_fallback(prompt, OcenaKroku)
         return OcenaKroku.model_validate_json(raw_json)
