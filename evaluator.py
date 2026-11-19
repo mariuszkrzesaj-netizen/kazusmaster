@@ -1,4 +1,5 @@
 import os
+import time
 import streamlit as st
 from pydantic import BaseModel, Field
 from google import genai
@@ -43,7 +44,32 @@ class KazusEvaluator:
             raise ValueError("Brak klucza GEMINI_API_KEY w Streamlit Secrets.")
 
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-3.8-flash"
+        # Lista modeli w kolejności priorytetu – przy 503 automatycznie przełącza na kolejny
+        self.models_fallback = ["gemini-3.8-flash", "gemini-4-hydrogen"]
+
+    def _call_with_fallback(self, prompt: str, schema) -> str:
+        ostatni_blad = None
+        for model_name in self.models_fallback:
+            for proba in range(2):
+                try:
+                    response = self.client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=schema,
+                            temperature=1.0,
+                        ),
+                    )
+                    return response.text
+                except Exception as e:
+                    ostatni_blad = e
+                    err_str = str(e)
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str:
+                        time.sleep(1.2)
+                        continue
+                    break
+        raise RuntimeError(f"Wszystkie modele AI są chwilowo przeciążone. Szczegóły: {ostatni_blad}")
 
     def generuj_kazus(self, dziedzina: str = "Prawo cywilne", temat: str = "", poziom: str = "Studia prawnicze") -> KazusEgzaminacyjny:
         kontekst_5_baz = zbierz_kontekst_prawny(
@@ -64,16 +90,8 @@ Wykorzystaj poniższy zweryfikowany kontekst prawny z oficjalnych baz (ELI/Sejm,
 
 Wygeneruj realistyczny, wielowątkowy kazus egzaminacyjny wraz ze wzorcowym rozwiązaniem w 5 krokach metody IRAC.
 """
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=KazusEgzaminacyjny,
-                temperature=1.0,
-            ),
-        )
-        return KazusEgzaminacyjny.model_validate_json(response.text)
+        raw_json = self._call_with_fallback(prompt, KazusEgzaminacyjny)
+        return KazusEgzaminacyjny.model_validate_json(raw_json)
 
     def ocen_krok(
         self,
@@ -121,13 +139,5 @@ INSTRUKCJA OCENY:
 2. Jeśli w kontekście znajdują się sygnatury wyroków SN, NSA lub aktów UE pasujące do kazusu, przywołaj je w komentarzu lub wskazówce.
 3. Przyznaj uczciwą punktację (0–100 pkt) i podaj wzorcowe ujęcie tego etapu.
 """
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=OcenaKroku,
-                temperature=1.0,
-            ),
-        )
-        return OcenaKroku.model_validate_json(response.text)
+        raw_json = self._call_with_fallback(prompt, OcenaKroku)
+        return OcenaKroku.model_validate_json(raw_json)
