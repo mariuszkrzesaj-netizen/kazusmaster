@@ -6,6 +6,7 @@ import streamlit as st
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
+from google.oauth2 import service_account
 from legal_sources import zbierz_kontekst_prawny
 
 
@@ -40,23 +41,44 @@ def _wyciagnij_json(tekst: str) -> dict:
 
 class KazusEvaluator:
     def __init__(self, api_key: str | None = None):
-        if not api_key:
-            try:
-                if "GEMINI_API_KEY" in st.secrets:
-                    api_key = st.secrets["GEMINI_API_KEY"]
-            except Exception:
-                pass
-        if not api_key:
-            api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("Brak klucza GEMINI_API_KEY w Streamlit Secrets.")
+        self.client = None
 
-        self.client = genai.Client(api_key=api_key)
-        # Wielostopniowa pula modeli – omija chwilowe przeciążenia pojedynczego klastra
+        # 1. Priorytet: Konto usługi Google Cloud Vertex AI (projekt new-its-system)
+        try:
+            if "gcp_service_account" in st.secrets:
+                creds_info = dict(st.secrets["gcp_service_account"])
+                credentials = service_account.Credentials.from_service_account_info(
+                    creds_info,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                )
+                self.client = genai.Client(
+                    vertexai=True,
+                    project=creds_info.get("project_id", "new-its-system"),
+                    location="us-central1",
+                    credentials=credentials,
+                )
+        except Exception as e:
+            raise ValueError(f"Błąd autoryzacji Vertex AI (gcp_service_account): {e}")
+
+        # 2. Tryb zapasowy: standardowy klucz GEMINI_API_KEY
+        if not self.client:
+            if not api_key:
+                try:
+                    if "GEMINI_API_KEY" in st.secrets:
+                        api_key = st.secrets["GEMINI_API_KEY"]
+                except Exception:
+                    pass
+            if not api_key:
+                api_key = os.environ.get("GEMINI_API_KEY")
+            if api_key:
+                self.client = genai.Client(api_key=api_key)
+
+        if not self.client:
+            raise ValueError("Brak sekcji [gcp_service_account] ani GEMINI_API_KEY w Streamlit Secrets.")
+
+        # Oficjalne modele dostępne w Vertex AI (us-central1)
         self.models_fallback = [
-            "gemini-3.8-flash-lite",
-            "gemini-3.8-flash",
-            "gemini-4-hydrogen",
+            "gemini-2.5-flash",
             "gemini-2.0-flash",
         ]
 
@@ -79,10 +101,10 @@ class KazusEvaluator:
                     ostatni_blad = e
                     err_str = str(e)
                     if "404" in err_str or "NOT_FOUND" in err_str:
-                        break  # Przejdź od razu do kolejnego modelu z listy
+                        break
                     time.sleep(0.8)
                     continue
-        raise RuntimeError(f"Wszystkie pule serwerów AI są chwilowo zajęte. Spróbuj ponownie za chwilę. ({ostatni_blad})")
+        raise RuntimeError(f"Błąd połączenia z Vertex AI. Szczegóły: {ostatni_blad}")
 
     def generuj_kazus(self, dziedzina: str = "Prawo cywilne", temat: str = "", poziom: str = "Studia prawnicze") -> KazusEgzaminacyjny:
         prompt = f"""
